@@ -163,7 +163,7 @@ class Take:
             scene.add_camera(cam)
 
             # Create point cloud
-            pcd = self.cameras[camera].get_colored_point_cloud_color(frame_number)
+            pcd = self.cameras[camera].get_colored_point_cloud_color(frame_number).voxel_down_sample(0.01)
 
             # reproject points to determine which pixel they were projected from
             pcd_pixel_indices = []
@@ -197,13 +197,33 @@ class Take:
 
             # 3 - Add images
 
+            # TODO: make this work correctly
             # Compute correct transformations
             depth_transform, rgb_transform = compute_final_transform(
                 self.cameras[camera].get_extrinsic_depth_matrix(),
                 self.cameras[camera].get_extrinsic_color_to_depth_matrix()
             )
 
-            inv_rgb_transform = np.linalg.inv(rgb_transform)
+            depth_tran = self.cameras[camera].get_extrinsic_depth_matrix()
+            d_to_rgb_transformation = self.cameras[camera].get_extrinsic_color_to_depth_matrix()
+
+            depth_final_transform = np.eye(4)
+            depth_final_transform[:3, :3] = depth_tran[:3, :3].T
+            depth_final_transform[:3, 3] = depth_tran[:3, 3]
+
+            depth_to_rgb_final_transform = np.eye(4)
+            depth_to_rgb_final_transform[:3, :3] = d_to_rgb_transformation[:3, :3].T
+            depth_to_rgb_final_transform[:3, 3] = -d_to_rgb_transformation[:3, 3]
+
+            rgb_final_transform = depth_to_rgb_final_transform @ depth_final_transform
+
+            inv_rgb_transform = np.linalg.inv(np.array([
+                rgb_final_transform[0, :4],
+                rgb_final_transform[1, :4],
+                rgb_final_transform[2, :4],
+                [0, 0, 0, 1]
+                ])
+            )
 
             # Convert rotation matrix to quaternion
             quaternion_obj = quaternion.from_rotation_matrix(inv_rgb_transform[:3, :3])
@@ -296,6 +316,7 @@ class Take:
 
         scene.scene.add_geometry("pcd", combined_pcd, o3d.visualization.rendering.MaterialRecord())
 
+
         for x, cam in enumerate(cameras):
             scene.scene.add_geometry(f"cam_{x}", cam, o3d.visualization.rendering.MaterialRecord())
 
@@ -310,5 +331,5 @@ class Take:
 
 test = Take(r"C:\Users\georg\Documents\DissertationGeorgeWigley\data\take2",
             r"C:\Users\georg\Documents\DissertationGeorgeWigley\data\calibration.json")
-test.serialize_to_colmap_txt_transformed_to_color(268, "C:/Users/georg/Documents/DissertationGeorgeWigley/test")
-# test.render_scene_visualisation(381, True)
+# test.serialize_to_colmap_txt_transformed_to_color(268, "C:/Users/georg/Documents/DissertationGeorgeWigley/test")
+test.render_scene_visualisation(268, True)

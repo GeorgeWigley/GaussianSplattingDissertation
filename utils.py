@@ -12,11 +12,11 @@ def convert_beween_opencv_opengl_view_mat(mat):
 
 def compute_final_transform(depth, depth_to_rgb):
     depth_final_transform = np.eye(4)
-    depth_final_transform[:3, :3] = depth[:3, :3].T
+    depth_final_transform[:3, :3] = depth[:3, :3]
     depth_final_transform[:3, 3] = depth[:3, 3]
 
     depth_to_rgb_final_transform = np.eye(4)
-    depth_to_rgb_final_transform[:3, :3] = depth_to_rgb[:3, :3].T
+    depth_to_rgb_final_transform[:3, :3] = depth_to_rgb[:3, :3]
     depth_to_rgb_final_transform[:3, 3] = depth_to_rgb[:3, 3]
 
     rgb_final_transform = depth_final_transform @ depth_to_rgb_final_transform
