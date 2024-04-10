@@ -5,6 +5,7 @@ import cv2
 import open3d as o3d
 import numpy as np
 
+import utils
 from data_parsing.alignment import AlignmentProcessor
 
 
@@ -74,7 +75,7 @@ class Camera:
                 f"Camera ID: {self.serial_id} : Frame requested not available. requested frame {frame_number}, try "
                 f"using get_available_frames() first to get a list of available frames")
 
-    def get_extrinsic_depth_matrix(self):
+    def get_depth_w2c(self):
         depth_r = np.reshape(self.camera_callibration["depth_extrinsics"]["orientation"], (3, 3))
         depth_t = self.camera_callibration["depth_extrinsics"]["translation"]
         mat = np.eye(4)
@@ -83,7 +84,7 @@ class Camera:
         mat[:3, 3] = depth_t
         return mat
 
-    def get_intrinsic_depth(self):
+    def get_depth_k(self):
         fx = self.camera_callibration["depth_intrinsics"]["fx"]
         fy = self.camera_callibration["depth_intrinsics"]["fy"]
         ppx = self.camera_callibration["depth_intrinsics"]["ppx"]
@@ -93,7 +94,7 @@ class Camera:
 
         return fx, fy, ppx, ppy, w, h
 
-    def get_intrinsic_depth_mat(self):
+    def get_depth_k_mat(self):
         fx = self.camera_callibration["depth_intrinsics"]["fx"]
         fy = self.camera_callibration["depth_intrinsics"]["fy"]
         ppx = self.camera_callibration["depth_intrinsics"]["ppx"]
@@ -107,7 +108,7 @@ class Camera:
 
         return res
 
-    def get_extrinsic_color_to_depth_matrix(self):
+    def get_c2d(self):
         color_r = np.reshape(self.camera_callibration["colour_to_depth_extrinsics"]["orientation"], (3, 3))
         color_t = self.camera_callibration["colour_to_depth_extrinsics"]["translation"]
         mat = np.eye(4)
@@ -115,7 +116,11 @@ class Camera:
         mat[:3, 3] = color_t
         return mat
 
-    def get_intrinsic_color(self):
+    def get_colour_w2c(self):
+        return self.get_depth_w2c() @ self.get_c2d()
+
+
+    def get_colour_k(self):
         fx = self.camera_callibration["colour_intrinsics"]["fx"]
         fy = self.camera_callibration["colour_intrinsics"]["fy"]
         ppx = self.camera_callibration["colour_intrinsics"]["ppx"]
@@ -125,7 +130,7 @@ class Camera:
 
         return fx, fy, ppx, ppy, w, h
 
-    def get_intrinsic_color_mat(self):
+    def get_colour_k_mat(self):
         fx = self.camera_callibration["colour_intrinsics"]["fx"]
         fy = self.camera_callibration["colour_intrinsics"]["fy"]
         ppx = self.camera_callibration["colour_intrinsics"]["ppx"]
@@ -147,23 +152,18 @@ class Camera:
         rgb_img = o3d.io.read_image(images["colour_images"])
         mask_img = o3d.io.read_image(images["segmented_images"])
 
-        transformation = self.get_extrinsic_color_to_depth_matrix()
-        # compute correct transformation for depth alignment
-        transformation[:3, :3] = transformation[:3, :3].T
-        transformation[:3, 3] = -transformation[:3, 3]
-
         transformed_depth_image = AlignmentProcessor.align_depth_to_rgb_image(
             np.asarray(depth_img),
             np.asarray(rgb_img),
-            self.get_intrinsic_depth_mat(),
-            self.get_intrinsic_color_mat(),
-            transformation
+            self.get_depth_k_mat(),
+            self.get_colour_k_mat(),
+            np.linalg.inv(self.get_c2d())
         )
 
         # Mask depth image if apply_segmentation_mask is set
         masked_depth = transformed_depth_image
         if apply_segmentation_mask:
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25))
             eroded_mask = cv2.erode(np.asarray(mask_img), kernel)
             masked_depth = np.where(np.asarray(eroded_mask) == 0, 0, np.asarray(transformed_depth_image))
 
@@ -177,65 +177,52 @@ class Camera:
 
     def get_colored_point_cloud_color(self, frame_number):
         # Load intrinsics
-        rgb_fx, rgb_fy, rgb_ppx, rgb_ppy, rgb_w, rgb_h = self.get_intrinsic_color()
+        rgb_fx, rgb_fy, rgb_ppx, rgb_ppy, rgb_w, rgb_h = self.get_colour_k()
         rgb_intrinsics = o3d.camera.PinholeCameraIntrinsic(
             rgb_w, rgb_h, rgb_fx, rgb_fy, rgb_ppx, rgb_ppy
         )
 
-        depth_transform = self.get_extrinsic_depth_matrix()
-        rgb_transform = self.get_extrinsic_color_to_depth_matrix()
-
-        # Transform images to depth camera and produce RGBD image
-        rgbd_img = self.get_rgbd_for_frame_transformed_to_color(frame_number, apply_segmentation_mask=True)
+        rgbd_img = self.get_rgbd_for_frame_transformed_to_color(frame_number, apply_segmentation_mask=False)
 
         # Create a new point cloud
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_img,
             rgb_intrinsics,
-            np.eye(4),
+            np.linalg.inv(self.get_colour_w2c()),
             project_valid_depth_only=True
         )
-        pcd.transform(rgb_transform)
-        pcd.transform(depth_transform)
 
         return pcd
 
     def get_point_cloud_depth(self, frame_number, color):
         # Load intrinsics for depth camera
-        depth_fx, depth_fy, depth_ppx, depth_ppy, depth_w, depth_h = self.get_intrinsic_depth()
+        depth_fx, depth_fy, depth_ppx, depth_ppy, depth_w, depth_h = self.get_depth_k()
         depth_intrinsics = o3d.camera.PinholeCameraIntrinsic(
             depth_w, depth_h, depth_fx, depth_fy, depth_ppx, depth_ppy
         )
 
         # Compute correct transformation
-        extrinsic_depth_mat = self.get_extrinsic_depth_matrix()
-        depth_final_transform = np.eye(4)
-        depth_final_transform[:3, :3] = extrinsic_depth_mat[:3, :3].transpose()
-        depth_final_transform[:3, 3] = extrinsic_depth_mat[:3, 3]
+        extrinsic_depth_mat = self.get_depth_w2c()
 
         # Create a new point cloud
         pcd = o3d.geometry.PointCloud.create_from_depth_image(
             o3d.io.read_image(self.get_image_paths_for_frame(frame_number, True)["depth_images"]),
             depth_intrinsics,
-            np.eye(4),
+            np.linalg.inv(extrinsic_depth_mat),
             project_valid_depth_only=True
         )
-        pcd.transform(depth_final_transform)
         pcd.paint_uniform_color(color)
 
         return pcd
 
     def get_camera_visualisation_line_set(self, color):
-        # Compute correct transformations
-        depth_transform = self.get_extrinsic_depth_matrix()
-        rgb_transform = self.get_extrinsic_color_to_depth_matrix()
-
         # load intrinsics
-        depth_fx, depth_fy, depth_ppx, depth_ppy, depth_w, depth_h = self.get_intrinsic_depth()
+        depth_fx, depth_fy, depth_ppx, depth_ppy, depth_w, depth_h = self.get_depth_k()
         depth_intrinsics = o3d.camera.PinholeCameraIntrinsic(
             depth_w, depth_h, depth_fx, depth_fy, depth_ppx, depth_ppy
         )
-        rgb_fx, rgb_fy, rgb_ppx, rgb_ppy, rgb_w, rgb_h = self.get_intrinsic_color()
+
+        rgb_fx, rgb_fy, rgb_ppx, rgb_ppy, rgb_w, rgb_h = self.get_colour_k()
         rgb_intrinsics = o3d.camera.PinholeCameraIntrinsic(
             rgb_w, rgb_h, rgb_fx, rgb_fy, rgb_ppx, rgb_ppy
         )
@@ -243,20 +230,17 @@ class Camera:
         # Add depth sensor vis
         depth_cam_vis = o3d.geometry.LineSet.create_camera_visualization(
             depth_intrinsics,
-            np.eye(4),
+            np.linalg.inv(self.get_depth_w2c()),
             scale=0.3
         )
-        depth_cam_vis.transform(depth_transform)
         depth_cam_vis.paint_uniform_color(color)
 
         # add rgb sensor vis
         col_cam_vis = o3d.geometry.LineSet.create_camera_visualization(
             rgb_intrinsics,
-            np.eye(4),
+            np.linalg.inv(self.get_colour_w2c()),
             scale=0.3
         )
-        col_cam_vis.transform(rgb_transform)
-        col_cam_vis.transform(depth_transform)
         col_cam_vis.paint_uniform_color(color)
 
         return depth_cam_vis, col_cam_vis

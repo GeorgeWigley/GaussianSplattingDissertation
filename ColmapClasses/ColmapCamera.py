@@ -11,7 +11,7 @@ class ColmapCamera:
         self.cy = cy
 
     def serialize_text(self):
-        result = f"{self.camera_id} {self.camera_type} {self.sensor_width} {self.sensor_height} {self.fx} {self.fy} {self.cx} {self.cy}"
+        result = f"{self.camera_id} {self.camera_type} {self.sensor_width} {self.sensor_height} {self.fx} {self.fy} {int(self.cx)} {int(self.cy)}"
         return result
 
     def serialize_bin(self):

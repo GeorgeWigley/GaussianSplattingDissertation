@@ -16,8 +16,8 @@ class Image:
     def serialize_text(self):
         line_one = f"{self.image_id} {self.qw} {self.qx} {self.qy} {self.qz} {self.tx} {self.ty} {self.tz} {self.camera_id} {self.file_name}"
         line_two = ""
-        for point in self.points_2d:
-            line_two += f"{point.x} {point.y} {point.point_3d_id} "
+        # for point in self.points_2d:
+        #     line_two += f"{point.x} {point.y} {point.point_3d_id} "
         return line_one, line_two
 
 
