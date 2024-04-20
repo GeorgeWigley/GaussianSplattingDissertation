@@ -117,8 +117,45 @@ class Camera:
         return mat
 
     def get_colour_w2c(self):
-        return self.get_depth_w2c() @ self.get_c2d()
 
+        colmap_poses = {
+            '000236320812': np.array(
+                [[9.99995703e-01, - 1.30696812e-03, - 2.62403348e-03, - 4.85492584e+00],
+                 [1.30671747e-03, 9.99999142e-01, - 9.72324683e-05, - 2.76190190e+00],
+                 [2.62415831e-03, 9.38031801e-05, 9.99996552e-01, 2.11866640e+00],
+                 [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]
+            ),
+            '000404613112': np.array(
+                [[0.53206451, 0.0620448, - 0.8444275, 4.2861101],
+                 [-0.06871399, 0.99718605, 0.02997289, - 1.94213824],
+                 [0.84391098, 0.04207647, 0.53483066, 0.64024422],
+                 [0., 0., 0., 1.]]
+            ),
+            '000407313112': np.array(
+                [[-7.91852643e-02, 1.81986328e-01, - 9.80107479e-01, 6.93644333e+00],
+                 [-3.67016104e-01, 9.08810544e-01, 1.98400038e-01, - 1.17361318e+00],
+                 [9.26838105e-01, 3.75425588e-01, - 5.17249001e-03, 3.16265359e+00],
+                 [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]
+            ),
+            '000558313112': np.array(
+                [[0.91291681, - 0.0491824, 0.40517155, - 7.79868908],
+                 [0.08214781, 0.99453931, - 0.06436852, - 1.81735566],
+                 [-0.39979324, 0.09204706, 0.91197188, 4.42649365],
+                 [0., 0., 0., 1.]]
+            ),
+            '000951614712': np.array(
+                [[0.7988739, 0.17106667, - 0.57665994, - 0.63248427],
+                 [-0.24142424, 0.96928485, - 0.04691707, 1.44876046],
+                 [0.5509218, 0.17670051, 0.81563601, - 0.10707786],
+                 [0., 0., 0., 1.]]
+            )
+        }
+
+        # colmap_pose = colmap_poses[self.serial_id]
+        base = np.linalg.inv(self.get_depth_w2c() @ self.get_c2d())
+        # base[:3, :3] = colmap_pose[:3, :3]
+
+        return base
 
     def get_colour_k(self):
         fx = self.camera_callibration["colour_intrinsics"]["fx"]
@@ -160,6 +197,8 @@ class Camera:
             np.linalg.inv(self.get_c2d())
         )
 
+        cv2.imwrite("temporary.png", transformed_depth_image)
+
         # Mask depth image if apply_segmentation_mask is set
         masked_depth = transformed_depth_image
         if apply_segmentation_mask:
@@ -188,9 +227,10 @@ class Camera:
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_img,
             rgb_intrinsics,
-            np.linalg.inv(self.get_colour_w2c()),
+            self.get_colour_w2c(),
             project_valid_depth_only=True
         )
+
 
         return pcd
 
@@ -238,7 +278,7 @@ class Camera:
         # add rgb sensor vis
         col_cam_vis = o3d.geometry.LineSet.create_camera_visualization(
             rgb_intrinsics,
-            np.linalg.inv(self.get_colour_w2c()),
+            self.get_colour_w2c(),
             scale=0.3
         )
         col_cam_vis.paint_uniform_color(color)

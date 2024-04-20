@@ -1,3 +1,5 @@
+import cv2
+
 from ColmapClasses import Image
 from ColmapClasses import ColmapCamera
 from ColmapClasses.Point2D import Point2D
@@ -5,6 +7,7 @@ from ColmapClasses import Point3D
 import os
 from tqdm import tqdm
 import open3d as o3d
+
 
 # This class must be run in the following order:
 # Add cameras
@@ -59,7 +62,6 @@ class COLMAPScene:
         os.makedirs(spare_model_path, exist_ok=True)
         os.makedirs(images_path, exist_ok=True)
 
-
         # write cameras
         with open(os.path.join(spare_model_path, "cameras.txt"), 'w') as f:
             for camera in self.cameras:
@@ -80,4 +82,7 @@ class COLMAPScene:
         # Serialize transformed images
         if serialize_images:
             for x, image_object in enumerate(self.images_data):
-                o3d.io.write_image(os.path.join(images_path, self.images[x].file_name), image_object)
+                cv2.imwrite(os.path.join(images_path, self.images[x].file_name),
+                            cv2.cvtColor(image_object, cv2.COLOR_BGR2RGB))
+
+
